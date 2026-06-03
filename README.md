@@ -1,275 +1,553 @@
-# 🎙 Claudio — 个人 AI 电台(骨架)
+# Claudio — 个人 AI 电台
 
-LLM 当大脑(Claude / OpenAI 兼容 / Mock 三选一)+ Node 中枢 + PWA 前端。
+LLM 当大脑（Claude / OpenAI / DeepSeek / Ollama 四选一），Node 中枢 + PWA 前端。
 
-**当前阶段**:跑通「用户输入 → LLM 结构化 JSON → TTS + 网易云播放」闭环,并支持定时播报、环境注入、对话历史、Router 点歌分流。Fish TTS / 飞书 API / UPnP / SQLite 为可选或规划中。
+**核心闭环**：用户输入 → Router 分流 → LLM 推理 → TTS 合成 + 网易云播放。支持定时播报、天气日程注入、对话历史、RAG 向量记忆、Radio 连续播放、UPnP 推流。
 
-## 前置条件
+> 架构可视化：[claudio-api-visualization.html](docs/claudio-api-visualization.html)（含连线、联动高亮、滚动吸附）
 
-- Node ≥ 20
-- 至少一个 LLM provider 可用(见下方"切换 provider")
-- Windows / macOS / Linux 都行
+---
 
-## 启动
+## 1. 快速启动
+
+### 克隆 & 安装
 
 ```bash
+git clone https://github.com/yian-cybe/Claudio.git
+cd Claudio
 npm install
-npm start              # 默认 auto:有 OPENAI_API_KEY 就用 openai,否则 claude
 ```
 
-打开 http://localhost:8080,输入一句话,几秒后听到回应。
+### 最小配置运行（Mock 模式）
 
-**两周完善计划**见 [`docs/两周计划.md`](docs/两周计划.md)。
-
-## 切换 LLM provider
-
-用 `LLM_PROVIDER` 环境变量指定:
-
-| 值 | 说明 | 关键 env |
-|----|------|----------|
-| `auto`(默认) | 有 `OPENAI_API_KEY` 走 openai,否则走 claude | — |
-| `claude` | spawn `claude` CLI 子进程,适合 Max 订阅 | `CLAUDE_MODEL`(默认 `claude-opus-4-7[1m]`)<br>`CLAUDE_CODE_GIT_BASH_PATH`(Win 自动探测) |
-| `openai` | 调 OpenAI 兼容协议(OpenAI / DeepSeek / 通义 / Kimi 都行) | `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` |
-| `mock` | 不调真 LLM,返回随机样例 | — |
-
-**`CLAUDIO_MOCK=1` 是 `LLM_PROVIDER=mock` 的快捷别名。**
-
-### 常见配置示例(bash)
+无需任何 API Key 即可体验 UI 和流程：
 
 ```bash
-# Claude(默认中转商或 Max 订阅)
-LLM_PROVIDER=claude npm start
+npm start
+# 或在 Windows 上直接双击 start.bat
+```
 
-# OpenAI 官方
-LLM_PROVIDER=openai OPENAI_API_KEY=sk-xxx OPENAI_MODEL=gpt-4o-mini npm start
+打开 `http://localhost:8080`，输入文字，Mock 模式返回随机示例响应。
 
-# DeepSeek
+### 生产配置运行（DeepSeek 推荐，国内最稳）
+
+```bash
+# Windows PowerShell
+$env:LLM_PROVIDER="openai"
+$env:OPENAI_API_KEY="sk-xxx"
+$env:OPENAI_BASE_URL="https://api.deepseek.com/v1"
+$env:OPENAI_MODEL="deepseek-chat"
+npm start
+```
+
+```bash
+# macOS / Linux
 LLM_PROVIDER=openai \
   OPENAI_API_KEY=sk-xxx \
   OPENAI_BASE_URL=https://api.deepseek.com/v1 \
   OPENAI_MODEL=deepseek-chat \
   npm start
-
-# 通义千问(阿里云)
-LLM_PROVIDER=openai \
-  OPENAI_API_KEY=sk-xxx \
-  OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 \
-  OPENAI_MODEL=qwen-plus \
-  npm start
-
-# Kimi(月之暗面)
-LLM_PROVIDER=openai \
-  OPENAI_API_KEY=sk-xxx \
-  OPENAI_BASE_URL=https://api.moonshot.cn/v1 \
-  OPENAI_MODEL=moonshot-v1-8k \
-  npm start
-
-# Mock(中转商挂了 / 想先看 UI)
-CLAUDIO_MOCK=1 npm start
 ```
 
-Windows PowerShell 用 `$env:VAR=...;`,cmd 用 `set VAR=... && ...`。
+### 首次验证
 
-## 接口
+```bash
+curl http://localhost:8080/api/health
+# 返回 {"ok":true,"llm":{"provider":"openai","ready":true,...},...}
+```
 
-| 端点 | 方法 | 说明 |
+---
+
+## 2. 环境变量（全部 API Key 清单）
+
+### LLM 核心
+
+| 变量 | 必填 | 说明 | 示例 |
+|------|------|------|------|
+| `LLM_PROVIDER` | 否 | `auto` / `claude` / `openai` / `mock` | `openai` |
+| `OPENAI_API_KEY` | 条件* | OpenAI 兼容协议的 API Key | `sk-xxx` |
+| `OPENAI_BASE_URL` | 否 | 自定义端点（DeepSeek/通义/Kimi） | `https://api.deepseek.com/v1` |
+| `OPENAI_MODEL` | 否 | 模型名，默认 `gpt-4o-mini` | `deepseek-chat` |
+| `CLAUDE_MODEL` | 否 | Claude CLI provider 使用的模型 | `claude-opus-4-7[1m]` |
+| `LLM_MAX_RETRIES` | 否 | 失败重试次数，默认 1 | `3` |
+
+\* 当 `LLM_PROVIDER=openai` 或 `auto` 时必填
+
+### Ollama 离线降级
+
+| 变量 | 必填 | 说明 | 示例 |
+|------|------|------|------|
+| `OLLAMA_FALLBACK` | 否 | 启用 Ollama 降级（需本地运行 ollama） | `true` |
+| `OLLAMA_MODEL` | 否 | 本地模型名，默认 `qwen2.5:3b` | `llama3:8b` |
+| `OLLAMA_BASE_URL` | 否 | Ollama API 地址 | `http://localhost:11434` |
+
+### 天气
+
+| 变量 | 必填 | 说明 |
 |------|------|------|
-| `/api/chat` | POST `{message}` | 触发 LLM 调用,结果通过 WS 推 |
-| `/api/now` | GET | 当前正在播放的歌曲 |
-| `/api/context` | GET | 当前环境(时间 + 天气,有 key 时启用) |
-| `/api/health` | GET | 健康检查 + 当前 provider + context 模块状态 |
-| `/api/messages` | GET `?limit=50&before=ts` | 可展示的消息列表(分页) |
-| `/api/state/clear` | POST | 清空对话历史 |
-| `/api/state/prune` | POST `{days/keep}` | 裁剪对话历史 |
-| `/api/reload` | POST | 热重载 `persona.md` / `memory.md` / `schedule.json` |
-| `/api/state` | GET | 消息计数 + 最后 5 条(调试用) |
-| `/stream` | WS | server → 前端事件流(`hello/thinking/say/error`) |
+| `OPENWEATHER_API_KEY` | 否 | [注册免费 Key](https://openweathermap.org/api) |
+| `OPENWEATHER_CITY` | 否 | 城市，默认 `Beijing,CN` |
 
-`say` 事件携带 `{text, play, reason, segue, meta}`。
+### Fish Audio TTS（可选）
 
-## 目录
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `FISH_AUDIO_API_KEY` | 是 | [Fish Audio](https://fish.audio) API Key |
+| `FISH_AUDIO_MODEL` | 否 | 模型，默认 `s2-pro` |
+| `FISH_AUDIO_REFERENCE_ID` | 否 | 音色参考 ID |
+
+### RSS 资讯
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `RSS_ENABLED` | 否 | 启用 RSS 注入，默认 `false` |
+| `RSS_SOURCES` | 否 | 逗号分隔的 RSS URL |
+| `RSS_MAX_ITEMS` | 否 | 每次取多少条，默认 5 |
+
+### RAG 向量记忆
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `RAG_ENABLED` | 否 | 启用语义检索，默认 `true` |
+| `EMBEDDING_API_KEY` | 否 | 嵌入服务 API Key（回退复用 `OPENAI_API_KEY`） |
+| `EMBEDDING_BASE_URL` | 否 | 嵌入服务 URL |
+| `EMBEDDING_MODEL` | 否 | 嵌入模型 |
+
+### 安全 & 网络
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `API_TOKEN` | 建议 | 设置后所有 API 需 Bearer Token 校验 |
+| `PORT` | 否 | 服务端口，默认 `8080` |
+| `HOST` | 否 | 监听地址，默认 `0.0.0.0`（设为 `127.0.0.1` 仅本地） |
+| `WS_PING_MS` | 否 | WebSocket 心跳间隔，默认 `25000` |
+
+### 对话
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `CONTEXT_HISTORY_SLICES` | 否 | 注入 LLM 的历史轮数，默认 6 |
+
+### 完整 .env 模板
+
+```bash
+# LLM（必选其一）
+LLM_PROVIDER=auto
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=deepseek-chat
+
+# 天气（可选）
+OPENWEATHER_API_KEY=
+OPENWEATHER_CITY=Beijing,CN
+
+# TTS（可选）
+FISH_AUDIO_API_KEY=
+FISH_AUDIO_MODEL=s2-pro
+FISH_AUDIO_REFERENCE_ID=
+
+# 安全
+API_TOKEN=
+PORT=8080
+
+# RAG
+RAG_ENABLED=true
+EMBEDDING_API_KEY=
+EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
+EMBEDDING_MODEL=bge-large-zh-v1.5
+
+# 历史
+CONTEXT_HISTORY_SLICES=6
+```
+
+---
+
+## 3. API 接口文档
+
+### 对话
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/chat` | POST | `{"message":"播放 周杰伦 晴天"}` | `{"ok":true}` — 结果通过 WS 推送 |
+
+**WebSocket `/stream`** 事件流：
+
+| type | payload | 触发时机 |
+|------|---------|---------|
+| `hello` | `{provider, t}` | WS 连接建立 |
+| `user-echo` | `{text, source}` | 用户消息回显 |
+| `thinking` | `{source, route}` | LLM 开始推理 |
+| `say` | `{text, play, reason, segue, ttsUrl}` | LLM 返回结果 |
+| `resolving` | `{keyword}` | 开始解析歌曲 |
+| `now-playing` | `{song:{name,artist,url}, segue}` | 歌曲可播放 |
+| `now-playing-failed` | `{keyword, error}` | 歌曲解析失败 |
+| `error` | `{message}` | 异常 |
+
+### 音乐
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/music/search` | GET | `?q=晴天` | `{q, songs:[{id,name,artist,album}]}` |
+| `/api/music/play` | GET | `?keyword=晴天` | `{id,name,artist,url}` |
+| `/api/music/lyrics` | GET | `?songId=xxx` | `{lyric}` |
+| `/api/music/recommend` | GET | `?songId=xxx` | `{songs:[...]}` |
+| `/api/music/refresh` | POST | — | 刷新当前歌曲直链 |
+
+### Radio 连续播放
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/radio/start` | POST | `{"scene":"work"}` | `{ok, status, firstTrack}` |
+| `/api/radio/stop` | POST | — | `{ok, summary}` |
+| `/api/radio/next` | GET | — | `{ok, track}` |
+| `/api/radio/status` | GET | — | `{playing, scene, history}` |
+
+### UPnP
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/upnp/scan` | GET | — | `{ok, devices:[{name,host,uuid}]}` |
+| `/api/upnp/push` | POST | `{"deviceUuid","audioUrl"}` | `{ok}` |
+| `/api/upnp/play` | POST | `{"deviceUuid"}` | `{ok}` |
+| `/api/upnp/pause` | POST | `{"deviceUuid"}` | `{ok}` |
+| `/api/upnp/stop` | POST | `{"deviceUuid"}` | `{ok}` |
+
+### 状态 & 管理
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/health` | GET | — | `{ok, llm, context, scheduler, rag, wsClients}` |
+| `/api/context` | GET | — | `{now, weather, schedule, rss}` |
+| `/api/now` | GET | — | `{song:{name,artist,url}}` |
+| `/api/state` | GET | — | `{messageCount, last5}` |
+| `/api/state/clear` | POST | — | 清空对话历史 |
+| `/api/state/prune` | POST | `{"days":7}` 或 `{"keep":100}` | `{ok, removed}` |
+| `/api/messages` | GET | `?limit=50&before=1700000000000` | `{messages, total, hasMore}` |
+| `/api/reload` | POST | — | 热重载 persona/memory/schedule |
+| `/api/schedule` | GET | — | 定时任务列表 |
+| `/api/schedule/trigger/:name` | POST | — | 手动触发定时任务 |
+| `/api/settings` | POST | `{"provider":"openai","model":"gpt-4o"}` | 运行时切换 LLM |
+
+### 品味文件
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/profile/read` | GET | `?file=taste` | `{file, content}` |
+| `/api/profile/save` | POST | `{"file":"taste","content":"..."}` | `{ok}` |
+
+### RAG
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/rag/index` | POST | — | `{ok, results}` — 重建索引 |
+| `/api/rag/search` | GET | `?q=周杰伦&limit=5` | `{query, results}` |
+| `/api/rag/status` | GET | — | `{indexedFiles, vectorCount}` |
+
+### RSS
+
+| 端点 | 方法 | 请求 | 响应 |
+|------|------|------|------|
+| `/api/rss/refresh` | POST | — | `{ok, count}` |
+
+### 鉴权
+
+设置 `API_TOKEN` 后，所有 `/api/*` 请求需带 `Authorization: Bearer <token>`。WebSocket 通过查询参数 `?token=<token>` 鉴权。
+
+---
+
+## 4. 前端 SPA 实现
+
+前端是单页 PWA 应用，位于 `public/`：
+
+| 文件 | 说明 |
+|------|------|
+| `index.html` | 侧边栏 + 对话区布局 |
+| `style.css` | 深色主题，响应式适配 |
+| `app.js` | WebSocket 管理、消息渲染、播放器控制 |
+| `sw.js` | Service Worker（离线缓存） |
+| `manifest.webmanifest` | PWA 清单 |
+
+**核心交互流程**：
+
+```
+用户输入 → POST /api/chat → WS /stream 监听
+  ├─ hello → 连接确认
+  ├─ user-echo → 回显消息到聊天区
+  ├─ thinking → 显示推理动画
+  ├─ say → 渲染文本 + 触发播放
+  ├─ resolving / now-playing → 播放器 UI 更新
+  └─ error → 显示错误提示
+```
+
+**特性**：
+- WebSocket 心跳保活（25s ping 间隔）
+- 对话历史持久化（localStorage + /api/messages 分页加载）
+- 播放器支持进度条、音量、暂停/继续
+- PWA 可安装到桌面，离线可用
+
+---
+
+## 5. 错误处理策略
+
+### 全局异常捕获
+
+server.js 各层均有 try-catch 包裹，异常被捕获后通过 WS 广播 `{type:'error', message}` 给前端：
+
+```javascript
+// runChat 最外层
+try {
+  // LLM 调用 + context 聚合 + TTS
+} catch (e) {
+  broadcast({ type: 'error', message: e.message });
+} finally {
+  chatBusy = false;
+}
+```
+
+### 各层降级策略
+
+| 层级 | 失败场景 | 降级行为 |
+|------|---------|---------|
+| LLM | provider 不可用 | Ollama 本地降级（需启用 `OLLAMA_FALLBACK`） |
+| LLM | 单次请求失败 | 指数退避重试（`LLM_MAX_RETRIES` 控制） |
+| TTS | Fish Audio 不可用 | 静默降级，前端用浏览器 Web Speech API |
+| 天气 | API 超时/无 Key | 仅注入时间，模块自动 disable |
+| 飞书 | API 失败 | 降级到本地 JSON 骨架 |
+| RSS | 抓取失败 | 跳过资讯片段，不阻塞聊天 |
+| RAG | embedding 失败 | RAG 上下文为空，不影响 LLM 推理 |
+| 音乐 | 网易云搜索无结果 | 广播 `now-playing-failed`，前端提示 |
+| 音乐 | 直链过期 | 自动刷新 URL |
+
+### 并发控制
+
+`chatBusy` 全局锁确保同一时间只有一条对话在处理：
+
+```javascript
+if (chatBusy) return res.status(429).json({ error: 'busy' });
+chatBusy = true;
+// ... 处理 ...
+chatBusy = false;
+```
+
+### 离线降级链
+
+```
+openai → Claude CLI → Ollama(fallback) → mock
+```
+
+当 `OLLAMA_FALLBACK=true` 时，主 LLM 不可用会自动切换 Ollama 本地模型。
+
+---
+
+## 6. 性能要求
+
+### 运行环境
+
+| 项目 | 最低要求 | 推荐 |
+|------|---------|------|
+| Node.js | ≥ 20.0.0 | 22 LTS |
+| 内存 | 256 MB | 512 MB（启用 RAG + Ollama 需 2 GB+） |
+| 存储 | 50 MB | 200 MB（含 RAG 向量索引 + TTS 缓存） |
+| 操作系统 | Windows / macOS / Linux | — |
+
+### 依赖包
+
+```json
+{
+  "express": "^4.21.0",       // HTTP 框架, ~2 MB
+  "ws": "^8.18.0",            // WebSocket, ~1 MB
+  "NeteaseCloudMusicApi": "^4.32.0", // 网易云 API, ~5 MB
+  "node-cron": "^4.2.1",      // 定时任务, ~500 KB
+  "openai": "^6.38.0"         // OpenAI SDK, ~3 MB
+}
+```
+
+总计安装后约 15-20 MB（不含 Ollama 模型，Ollama 模型通常 2-8 GB 需单独存放）。
+
+### 运行时资源
+
+| 组件 | CPU | 内存 |
+|------|-----|------|
+| server.js | 极低（事件循环） | ~50 MB |
+| RAG 向量索引 | 低（仅检索时） | ~10 MB |
+| Ollama 本地模型 | 推理时较高 | 2-8 GB（模型本身） |
+
+---
+
+## 7. 扩展指南
+
+### 添加新 Context 模块
+
+Context 模块负责收集某类环境信息，注入 system prompt。以天气模块为例：
+
+**Step 1**：创建 `lib/context/mycontext.js`
+
+```javascript
+let enabled = false;
+
+export function init() {
+  enabled = !!process.env.MY_API_KEY;
+}
+
+export function enabled() { return enabled; }
+
+export async function getData() {
+  // 调用你的 API，返回结构化数据
+  const res = await fetch(`https://api.example.com/data`, {
+    headers: { Authorization: `Bearer ${process.env.MY_API_KEY}` }
+  });
+  return res.json();
+}
+
+export function toPromptFragment(data) {
+  // 将数据转为自然语言片段
+  return `我的数据: ${data.summary}`;
+}
+
+export function info() {
+  return { ready: enabled, configured: !!process.env.MY_API_KEY };
+}
+```
+
+**Step 2**：在 `server.js` 中注册
+
+```javascript
+import * as myContext from './lib/context/mycontext.js';
+
+// collectContext() 中添加
+async function collectContext(userMessage) {
+  // ... existing code ...
+  if (myContext.enabled()) {
+    try { out.myData = await myContext.getData(); }
+    catch (e) { out.myDataError = e.message; }
+  }
+  return out;
+}
+
+// prompt-builder 中注入
+// 在 buildSystemPrompt() 的 envParts 中添加
+if (ctx.myData) envParts.push(myContext.toPromptFragment(ctx.myData));
+
+// /api/health 中添加状态
+context: { ..., myContext: myContext.info() }
+```
+
+**Step 3**：在 `.env.example` 添加配置项
+
+```bash
+MY_API_KEY=
+```
+
+### 添加新 LLM Provider
+
+实现 `lib/llm/yourprovider.js`，导出两个函数：
+
+```javascript
+export async function ask({ userMessage, systemPrompt, historyMessages, timeoutMs }) {
+  // 调你的 LLM，返回 {say, play, reason, segue, _meta}
+}
+
+export async function info() {
+  return { provider: 'yourprovider', ready: true, detail: {} };
+}
+```
+
+在 `lib/llm/index.js` 的 `ADAPTERS` 中注册：
+
+```javascript
+import * as yourProvider from './yourprovider.js';
+const ADAPTERS = { ..., yourprovider: yourProvider };
+```
+
+然后用 `LLM_PROVIDER=yourprovider npm start` 即可切换。
+
+### 添加新路由规则
+
+编辑 `lib/router.js`，添加匹配模式：
+
+```javascript
+const MY_PATTERN = /^我的指令\s*(.+)$/i;
+
+export function route({ message, source, scheduledFragment }) {
+  // ... existing code ...
+  const matched = m.match(MY_PATTERN);
+  if (matched?.[1]) {
+    return { mode: 'my-mode', keyword: matched[1].trim(), reason: 'custom' };
+  }
+  return { mode: 'llm', reason: 'default' };
+}
+```
+
+在 `runChat()` 中处理新的 mode：
+
+```javascript
+if (route.mode === 'my-mode') {
+  await emitSay({ say: `处理自定义指令: ${route.keyword}`, source });
+  return { ok: true };
+}
+```
+
+---
+
+## 目录结构
 
 ```
 claudio/
-├── server.js                # Express + WS
+├── server.js                 # Express + WS 主进程
 ├── lib/
-│   ├── llm/                 # claude / openai / mock + 多轮 history
-│   ├── context/
-│   │   ├── weather.js       # OpenWeather
-│   │   ├── history.js       # 近期对话切片
-│   │   ├── memory.js        # prompts/memory.md
-│   │   ├── taste.js         # USER 品味上下文（4 文件组装）
-│   │   └── feishu.js        # 飞书日程（API + 本地 JSON 双模式）
-│   ├── music/
-│   │   ├── ncm.js           # 网易云搜歌 + 直链
-│   │   └── local.js         # 本地 mp3 降级（离线兜底）
-│   ├── import/
-│   │   ├── ncm.js           # 网易云数据导入（登录 + 拉取）
-│   │   ├── analyzer.js      # 听歌数据聚合分析
-│   │   └── writer.js        # 品味文件写入器
-│   ├── tts/fish.js          # Fish Audio(可选)
-│   ├── router.js            # 点歌指令分流
-│   ├── auth.js              # API_TOKEN 中间件
-│   ├── scheduler.js         # cron 定时
-│   ├── state.js
-│   ├── persona.js
-│   └── prompt-builder.js    # Prompt 组装器
-├── prompts/persona.md
-├── prompts/memory.md        # 长期记忆(可选)
-├── prompts/taste.md         # 音乐品味档案
-├── prompts/routines.md      # 日常节奏表
-├── prompts/playlists.json   # 歌单索引
-├── prompts/mood-notes.json  # 近期心情日志
-├── data/feishu-schedule.example.json
-├── music/                   # 本地 mp3 曲库（放入 .mp3 文件即可离线播放）
-├── public/                  # PWA(Player 单视图)
-├── state/
-│   ├── state.json         # 运行时持久化(.gitignore)
-│   └── backups/           # 品味文件导入前自动备份
+│   ├── llm/                  # LLM 适配器（claude/openai/ollama/mock）
+│   ├── context/              # 环境注入模块（天气/飞书/RSS/品味/记忆/历史）
+│   ├── music/                # 音乐播放（网易云/本地降级/UPnP）
+│   ├── import/               # 网易云数据导入（登录/分析/写入）
+│   ├── tts/                  # Fish Audio TTS
+│   ├── rag/                  # RAG 向量记忆（嵌入/检索/索引）
+│   ├── router.js             # 点歌指令分流
+│   ├── auth.js               # API Token 鉴权
+│   ├── radio.js              # Radio 连续播放
+│   ├── scheduler.js          # Cron 定时任务
+│   ├── state.js              # 状态持久化
+│   ├── persona.js            # 人设加载
+│   ├── prompt-builder.js     # System Prompt 组装
+│   ├── db.js                 # SQLite 数据库（规划中）
+│   └── logger.js             # 日志
+├── prompts/                  # 人设/品味/记忆模板
+├── public/                   # PWA 前端（SPA）
+├── scripts/                  # CLI 工具
+├── docs/                     # 文档 + 架构可视化
+├── test/                     # 单元测试
+├── data/                     # 示例数据
+├── music/                    # 本地 mp3 曲库
+└── state/                    # 运行时持久化（.gitignore）
 ```
 
-## Context 注入
+---
 
-每次 chat,server 会在 system prompt 末尾追加一段「当前环境」:
-
-```
-# 当前环境
-现在 2026/5/21 11:30:00
-天气 北京 多云 18°C · 体感 16°C · 湿度 55%
-```
-
-天气需配置 `OPENWEATHER_API_KEY`(去 https://openweathermap.org/api 注册免费 key,10 分钟内存缓存,接口失败不阻塞 chat)。无 key 时只注入时间,模块自动 disable。
-
-后续接「飞书日程」「已检索记忆」等也走同样模式 —— 各自一个 `lib/context/*.js`,在 server 的 `collectContext()` 里聚合。
-
-### USER 品味文件体系
-
-项目支持通过四份文件定义用户的音乐品味和日常节奏，LLM 会在每次对话中读取这些信息来个性化推荐。
-
-| 文件 | 说明 | 格式 |
-|------|------|------|
-| `prompts/taste.md` | 音乐品味档案：喜欢/讨厌的风格、歌手、年代、聆听习惯 | Markdown |
-| `prompts/routines.md` | 日常节奏表：按时间段描述状态和音乐需求 | Markdown |
-| `prompts/playlists.json` | 歌单索引：name / description / mood / tags | JSON 数组 |
-| `prompts/mood-notes.json` | 近期心情日志：date / mood / note / wanted_genre | JSON 数组 |
-
-品味文件由 `lib/context/taste.js` 统一读取并组装为结构化上下文，通过 `lib/prompt-builder.js` 注入 system prompt。
-
-编辑品味文件后调用 `POST /api/reload` 即可热更新，无需重启服务。
-
-Prompt 组装顺序：persona → taste → context（天气/日程）→ memory → scheduled。
-
-## 网易云数据导入
-
-通过 `npm run import-ncm` 可以从网易云音乐自动拉取你的听歌数据，聚合分析后更新品味文件。
-
-**流程**:
-1. 手机号登录网易云（首次需输入手机号 + 密码，后续自动恢复会话）
-2. 拉取听歌排行（所有时间 + 最近一周）、歌单列表、红心歌曲
-3. 聚合分析：TOP 20 高频歌手、风格分布、年代偏好
-4. 展示预览，确认后写入品味文件
-
-**写入的文件**:
-
-| 文件 | 策略 |
-|------|------|
-| `prompts/taste.md` | **覆盖**风格/歌手/年代/讨厌类型（自动生成） |
-| `prompts/playlists.json` | **追加**新歌单条目，按 id 去重，保留手动编辑 |
-| `prompts/routines.md` | **不修改** |
-| `prompts/mood-notes.json` | **不修改** |
-
-写入前原文件自动备份到 `state/backups/`。
+## 维护命令
 
 ```bash
-npm run import-ncm
-# 或直接:
-node scripts/import-ncm.js
+npm start              # 启动服务
+npm test               # 运行单元测试
+npm run regression     # 回归测试
+npm run prune-state    # 清理 state.json 调试消息
+npm run import-ncm     # 从网易云导入听歌数据
 ```
 
-导入完成后可调用 `POST /api/reload` 热更新品味上下文。
+---
 
-## 定时播报配置 (`prompts/schedule.json`)
+## 架构可视化
 
-系统支持基于 cron 表达式的定时任务。编辑 `prompts/schedule.json`：
+打开 [docs/claudio-api-visualization.html](docs/claudio-api-visualization.html) 查看完整的 API 端点 → 核心模块 → 外部依赖的交互式架构图。
 
-```json
-[
-  { 
-    "name": "morning", 
-    "cron": "0 7 * * *",  
-    "fragment": "现在是早 7 点。主动跟用户说一句温暖的早安,可以结合当前天气。" 
-  }
-]
-```
+特性：
+- 80+ 条连线展示数据流和依赖关系
+- Hover 节点 → 上下游联动高亮
+- 点击节点 → 持久高亮 + 平滑跳转
+- 水平滚动吸附 + 键盘 ← → 导航
+- 粘性列标题 + 视差背景
+- 入场动画 + 粒子流动
 
-- **name**: 任务唯一标识，用于日志和手动触发。
-- **cron**: 标准 5 位 cron 表达式（分 时 日 月 周）。
-- **fragment**: 触发时发送给 LLM 的指令片段。LLM 会根据此片段生成一段回复并通过语音播放。
+---
 
-修改后可调用 `POST /api/reload` 热更新，无需重启服务。
+## 许可
 
-## 安全建议
-
-- **API Token**: 如果你打算将 Claudio 暴露在公网，请务必在 `.env` 中设置 `API_TOKEN=你的长随机字符串`。设置后，所有 API 请求（包括 WebSocket）都需要校验 Token。
-- **本地绑定**: 默认情况下服务监听所有网卡。在生产环境或不需要外网访问时，建议通过 `HOST=127.0.0.1` 环境变量限制仅本地访问。
-- **.env 文件**: 严禁将包含真实 Key 的 `.env` 提交到 Git。本项目已默认将其加入 `.gitignore`。
-- **HTTPS**: 如果通过公网访问，建议使用 Nginx 反向代理并配置 SSL 证书，以防 Token 在传输过程中被截获。
-
-## 加新 provider
-
-实现一个新文件 `lib/llm/yourprovider.js`,导出两个函数:
-
-```js
-export async function ask({ userMessage, systemPrompt, timeoutMs }) {
-  // 调你的 LLM,返回 {say, play, reason, segue, _meta}
-}
-export async function info() {
-  return { provider: 'yourprovider', ready: <bool>, detail: {...}, error: '可选' };
-}
-```
-
-在 `lib/llm/index.js` 的 `ADAPTERS` 里加一行,就能用 `LLM_PROVIDER=yourprovider` 切到了。
-
-## 中转商踩坑记录(走 claude provider 时)
-
-如果环境里 `ANTHROPIC_BASE_URL` 指向第三方中转,可能遇到:
-
-- **`API Error: 503 model_not_found`** — 中转对某 model 没频道。换 `CLAUDE_MODEL` 试试
-- **`API Error: 429 Service Unavailable`** — 中转限流。CLI 内部退避重试,可能 3-5 分钟才退
-- **`API Error: 400 1m 上下文已经全量可用,请启用 1m 上下文`** — 中转强制要 `[1m]` 后缀
-
-诊断顺序:
-1. 终端直接跑 `claude -p "hi" --model claude-opus-4-7[1m]`,先确认中转可用
-2. 不可用 → 换 provider(`LLM_PROVIDER=openai` + DeepSeek 国内最稳)或用 mock
-
-## 进阶能力(已实现)
-
-| 能力 | 说明 | 配置 |
-|------|------|------|
-| 对话历史 | 最近 `CONTEXT_HISTORY_SLICES` 轮用户对话注入 LLM | 默认 6 |
-| Router | `播放 xxx` / `点歌 xxx` / `/play xxx` 跳过 LLM 直连网易云 | 无需配置 |
-| 长期记忆 | `prompts/memory.md` 拼进 system prompt | 编辑文件即可 |
-| 日程(骨架) | `data/feishu-schedule.json` 今日事项 | 复制 example 改名 |
-| 定时播报 | `prompts/schedule.json` cron + 触发文案 | 改文件后重启服务 |
-| Fish TTS | 配置后 `say` 用 Fish 音频,失败回退浏览器朗读 | `FISH_AUDIO_*` |
-| API 鉴权 | 设置 `API_TOKEN` 后 POST `/api/chat` 需 Bearer | 可选 |
-
-点歌示例:`播放 周杰伦 晴天`、`点歌 Norah Jones`
-
-维护命令:
-
-```bash
-npm run prune-state   # 从 state.json 删除 scheduled:test 等调试消息
-npm run import-ncm    # 从网易云音乐导入听歌数据并更新品味文件
-curl -X POST http://127.0.0.1:8080/api/reload   # 热更新人设与记忆
-```
-
-Fish TTS 配置见 [`docs/FISH-TTS.md`](docs/FISH-TTS.md)。变更记录见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)。
-
-## 已知限制 / 后续
-
-- TTS 默认浏览器 Web Speech;Fish 需 API Key 与 `reference_id`(可选)
-- 飞书日程目前是本地 JSON 骨架,未接飞书 Open API
-- UPnP 推流到局域网音箱未实现
-- 状态仍用 JSON 文件,未换 SQLite
-- 无向量记忆检索(RAG)
+MIT
