@@ -1,0 +1,38 @@
+[
+  {
+    "name": "清晨律动",
+    "description": "早上的 Bossa Nova 和轻爵士，温和唤醒",
+    "mood": "清新",
+    "tags": ["早晨", "爵士", "Bossa Nova", "唤醒"]
+  },
+  {
+    "name": "深度专注",
+    "description": "无歌词的电子氛围和极简钢琴，适合高度集中",
+    "mood": "专注",
+    "tags": ["工作", "Ambient", "钢琴", "无歌词"]
+  },
+  {
+    "name": "午后微醺",
+    "description": "Trip-Hop 和 Downtempo，对抗午后困意",
+    "mood": "放松",
+    "tags": ["下午", "Trip-Hop", "电子", "律动"]
+  },
+  {
+    "name": "落日余晖",
+    "description": "Funk、Soul 和世界音乐，下班过渡",
+    "mood": "温暖",
+    "tags": ["傍晚", "Funk", "Soul", "放松"]
+  },
+  {
+    "name": "深夜书房",
+    "description": "Dream Pop 和古典室内乐，安静内省",
+    "mood": "静谧",
+    "tags": ["夜晚", "Dream Pop", "古典", "阅读"]
+  },
+  {
+    "name": "雨夜安眠",
+    "description": "Ambient 和氛围钢琴，帮助入眠",
+    "mood": "安宁",
+    "tags": ["睡前", "Ambient", "钢琴", "助眠"]
+  }
+]

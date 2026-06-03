@@ -1,0 +1,26 @@
+{
+  "name": "claudio",
+  "version": "0.1.0",
+  "description": "个人 AI 电台 — Claude Code 当大脑,Node 中枢 + PWA 前端",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "prune-state": "node scripts/prune-state.js",
+    "import-ncm": "node scripts/import-ncm.js",
+    "test": "node --test test/*.test.js",
+    "regression": "node scripts/regression-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "node-cron": "^4.2.1",
+    "openai": "^6.38.0",
+    "ws": "^8.18.0"
+  },
+  "author": "cuiyao",
+  "license": "MIT"
+}

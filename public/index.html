@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claudio</title>
+  <meta name="theme-color" content="#1a1a1a">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <header class="sidebar-header">
+        <div class="brand">🎙 Claudio</div>
+        <button id="new-chat" class="new-chat-btn">
+          <span class="icon">+</span> 新建对话
+        </button>
+      </header>
+      
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <div class="group-title">最近对话</div>
+          <div id="recent-list" class="recent-list"></div>
+        </div>
+      </nav>
+
+      <footer class="sidebar-footer">
+        <div id="ws-status" class="ws-status">
+          <span id="ws-dot" class="dot dot-off"></span>
+          <span id="ws-text">连接中…</span>
+        </div>
+        <div class="footer-actions">
+          <button id="clear-chat" class="icon-btn" title="清空所有记录">🗑️</button>
+          <button id="debug-toggle" class="icon-btn" title="调试选项">{}</button>
+        </div>
+      </footer>
+    </aside>
+
+    <main class="app">
+      <nav class="app-nav">
+        <button class="nav-btn active" data-page="player" title="Player">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="nav-btn" data-page="profile" title="Profile">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </button>
+        <button class="nav-btn" data-page="settings" title="Settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </nav>
+
+      <div class="app-pages">
+        <!-- Player Page -->
+        <section id="page-player" class="page active">
+          <section id="chat" class="chat">
+            <button id="load-more" class="load-more hidden">加载更多历史消息</button>
+            <div id="empty-state" class="empty-state">
+              <p>新会话已开启</p>
+              <p class="subtitle">Claudio 随时为你播报</p>
+            </div>
+          </section>
+
+          <section id="player" class="player hidden">
+            <button id="player-unlock" class="player-unlock hidden">▶ 点这里启用电台播放</button>
+            <div id="radio-bar" class="radio-bar hidden">
+              <button id="radio-toggle" class="radio-toggle-btn">Radio 关</button>
+              <span id="radio-scene-tag" class="radio-scene-tag hidden"></span>
+              <span id="radio-track-count" class="radio-track-count hidden"></span>
+              <button id="radio-stop-btn" class="radio-stop-btn hidden">关闭 Radio</button>
+            </div>
+            <div id="player-card" class="player-card hidden">
+              <div id="player-segue" class="player-segue"></div>
+              <div class="player-info">
+                <div id="player-title" class="player-title">—</div>
+                <div id="player-artist" class="player-artist">—</div>
+              </div>
+              <div class="player-controls">
+                <button id="player-toggle" class="player-toggle">⏸</button>
+                <button id="player-recommend" class="player-recommend-btn" title="相似推荐">♪+</button>
+                <button id="player-upnp" class="player-upnp-btn" title="推送到 DLNA 设备">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="7 21 12 17 17 21"/></svg>
+                </button>
+              </div>
+              <progress id="player-progress" class="player-progress" value="0" max="1"></progress>
+              <div class="player-time">
+                <span id="player-current">0:00</span>
+                <span id="player-duration">0:00</span>
+              </div>
+              <div id="lyrics-panel" class="lyrics-panel hidden">
+                <div id="lyrics-content" class="lyrics-content"></div>
+              </div>
+              <div id="recommend-panel" class="recommend-panel hidden">
+                <div class="recommend-title">相似推荐</div>
+                <div id="recommend-list" class="recommend-list"></div>
+              </div>
+              <div id="upnp-panel" class="upnp-panel hidden">
+                <div class="upnp-header">
+                  <span class="upnp-title">DLNA 设备</span>
+                  <button id="upnp-close" class="upnp-close-btn">&times;</button>
+                </div>
+                <div id="upnp-device-list" class="upnp-device-list">
+                  <div class="upnp-loading">正在扫描...</div>
+                </div>
+                <button id="upnp-rescan" class="upnp-rescan-btn">重新扫描</button>
+              </div>
+            </div>
+            <audio id="player-audio" preload="auto" crossorigin="anonymous" referrerpolicy="no-referrer"></audio>
+          </section>
+
+          <form id="compose" class="compose">
+            <div class="input-wrapper">
+              <input id="input" type="text" placeholder="向 Claudio 提问..." autocomplete="off" maxlength="500" />
+              <button id="send" type="submit" class="send-btn">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Profile Page -->
+        <section id="page-profile" class="page">
+          <div class="profile-scroll">
+            <h2 class="page-title">Profile</h2>
+            <div class="profile-card"><h3>人设状态</h3><div id="profile-persona" class="profile-grid">加载中…</div></div>
+            <div class="profile-card"><h3>当前场景</h3><div id="profile-scene" class="profile-grid">加载中…</div></div>
+            <div class="profile-card"><h3>品味档案</h3><div id="profile-taste" class="profile-grid">加载中…</div></div>
+            <div class="profile-card"><h3>近期心情</h3><div id="profile-mood" class="profile-mood-list">加载中…</div></div>
+          </div>
+        </section>
+
+        <!-- Settings Page -->
+        <section id="page-settings" class="page">
+          <div class="profile-scroll">
+            <h2 class="page-title">Settings</h2>
+
+            <div class="profile-card">
+              <h3>LLM Provider</h3>
+              <div class="setting-row">
+                <span>当前 Provider</span>
+                <select id="setting-provider" class="setting-select"><option>加载中…</option></select>
+              </div>
+              <div class="setting-row">
+                <span>Model（仅 OpenAI）</span>
+                <input id="setting-model" type="text" class="setting-input" placeholder="如 gpt-4o / deepseek-v3" autocomplete="off">
+              </div>
+              <div class="setting-row">
+                <span id="setting-status"></span>
+                <button id="setting-save" class="save-btn">保存设置</button>
+              </div>
+            </div>
+
+            <div class="profile-card">
+              <h3>TTS 语音合成</h3>
+              <div class="setting-row">
+                <span>启用浏览器朗读</span>
+                <label class="switch">
+                  <input id="setting-tts" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="profile-card">
+              <h3>API Token</h3>
+              <input id="setting-token" type="password" class="setting-input" placeholder="输入 API Token…" autocomplete="off">
+              <div class="setting-hint" id="setting-token-hint"></div>
+            </div>
+
+            <div class="profile-card">
+              <h3>品味文件编辑</h3>
+              <div class="tab-bar" id="edit-tabs">
+                <button class="tab-btn active" data-tab="taste">taste</button>
+                <button class="tab-btn" data-tab="routines">routines</button>
+                <button class="tab-btn" data-tab="playlists">playlists</button>
+                <button class="tab-btn" data-tab="mood-notes">mood-notes</button>
+              </div>
+              <textarea id="edit-textarea" class="edit-textarea" rows="14" placeholder="选择文件以编辑…"></textarea>
+              <div class="setting-row">
+                <span id="edit-status" class="edit-status"></span>
+                <button id="edit-save" class="save-btn" disabled>保存</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <aside id="debug" class="debug hidden">
+      <header><h2>调试面板</h2></header>
+      <pre id="debug-log"></pre>
+    </aside>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

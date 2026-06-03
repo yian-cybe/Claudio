@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claudio API Architecture — Dataflow Visualization</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--scroll-x:0;--col-gap:clamp(12px,1.5vw,28px)}
+body{
+  background:#0B1018;color:#CDD6F4;
+  font-family:'Inter','PingFang SC','Microsoft YaHei',sans-serif;
+  overflow:hidden;height:100vh;
+  user-select:none;-webkit-user-select:none;
+}
+
+/* ═══ FIXED BACKGROUND GRID (parallax layer) ═══ */
+.bg-grid{
+  position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+  background-size:clamp(24px,2.5vw,40px) clamp(24px,2.5vw,40px);
+  will-change:transform;
+}
+
+/* ═══ TOP PANEL (fixed sticky) ═══ */
+.top-panel{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  background:linear-gradient(180deg,rgba(11,16,24,.98) 60%,rgba(11,16,24,0));
+  padding:clamp(8px,1.2vh,16px) clamp(12px,2vw,28px) clamp(4px,0.8vh,12px);
+  display:flex;flex-direction:column;gap:clamp(2px,0.4vh,6px);
+  pointer-events:none;
+}
+.top-panel>*{pointer-events:auto}
+.title-row{display:flex;align-items:flex-start;justify-content:space-between;width:100%}
+.title-block h1{
+  font-size:clamp(16px,1.7vw,24px);font-weight:700;letter-spacing:-0.5px;
+  background:linear-gradient(135deg,#4FC3F7 0%,#81C784 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.title-block p{color:#8892B0;font-size:clamp(9px,0.8vw,12px);margin-top:1px;font-weight:400}
+.status-row{display:flex;align-items:center;justify-content:space-between;width:100%}
+.status-block{display:flex;align-items:center;gap:clamp(8px,1.2vw,16px);font-size:clamp(9px,0.75vw,11px);color:#8892B0}
+.status-dot{width:clamp(5px,0.5vw,7px);height:clamp(5px,0.5vw,7px);border-radius:50%;display:inline-block;margin-right:4px}
+.status-dot.green{background:#81C784;box-shadow:0 0 6px #81C784;animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
+.status-item{display:flex;align-items:center;white-space:nowrap}
+.status-val{color:#CDD6F4;font-weight:500;margin-left:3px}
+.legend{display:flex;gap:clamp(6px,0.8vw,12px)}
+.legend-item{display:flex;align-items:center;gap:4px;font-size:clamp(8px,0.65vw,10px);color:#8892B0}
+.legend-dot{width:clamp(6px,0.55vw,8px);height:clamp(6px,0.55vw,8px);border-radius:2px}
+.legend-dot.api{background:#4FC3F7;box-shadow:0 0 4px rgba(79,195,247,.4)}
+.legend-dot.core{background:#81C784;box-shadow:0 0 4px rgba(129,199,132,.4)}
+.legend-dot.ext{background:#FFB74D;box-shadow:0 0 4px rgba(255,183,77,.4)}
+.legend-dot.ws{background:#CE93D8;box-shadow:0 0 4px rgba(206,147,216,.4)}
+.controls{display:flex;gap:4px}
+.ctrl-btn{
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);
+  color:#8892B0;font-size:clamp(8px,0.65vw,10px);font-family:'Inter','PingFang SC',sans-serif;
+  padding:clamp(3px,0.4vh,5px) clamp(6px,0.8vw,10px);border-radius:5px;cursor:pointer;
+  transition:all .2s;white-space:nowrap;
+}
+.ctrl-btn:hover{background:rgba(255,255,255,.1);color:#CDD6F4;border-color:rgba(255,255,255,.2)}
+.ctrl-btn.active{background:rgba(79,195,247,.15);border-color:#4FC3F7;color:#4FC3F7}
+
+/* ═══ SCROLL CONTAINER ═══ */
+.scroll-container{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  overflow-x:auto;overflow-y:hidden;
+  scroll-snap-type:x mandatory;
+  scroll-behavior:smooth;
+  -webkit-overflow-scrolling:touch;
+  z-index:1;
+}
+.scroll-container::-webkit-scrollbar{height:6px}
+.scroll-container::-webkit-scrollbar-track{background:rgba(255,255,255,.03);border-radius:3px}
+.scroll-container::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+.scroll-container::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.18)}
+
+/* ═══ ARCH GRID (flex) ═══ */
+.arch-grid{
+  display:flex;gap:var(--col-gap);
+  padding:clamp(70px,9vh,110px) clamp(10px,1.5vw,28px) clamp(24px,3vh,40px);
+  min-height:100vh;width:max-content;
+}
+.snap-col{
+  flex-shrink:0;display:flex;flex-direction:column;gap:clamp(10px,1.5vh,20px);
+  scroll-snap-align:start;
+  padding:0 clamp(6px,0.8vw,12px);
+}
+/* Column widths in vw */
+.col-l1{width:60vw;min-width:380px}
+.col-l2{width:28vw;min-width:200px}
+.col-l3{width:24vw;min-width:180px}
+.col-l4{width:36vw;min-width:260px}
+.col-l5{width:56vw;min-width:380px}
+.col-l6{width:38vw;min-width:260px}
+@media(max-width:1200px){.col-l6{display:none}}
+
+/* ═══ STICKY COLUMN HEADER ═══ */
+.col-header{
+  position:sticky;top:clamp(60px,8vh,90px);
+  padding:clamp(4px,0.5vh,8px) clamp(6px,0.8vw,12px);
+  background:linear-gradient(180deg,rgba(11,16,24,.95) 0%,rgba(11,16,24,.7) 80%,transparent 100%);
+  backdrop-filter:blur(8px);
+  border-radius:6px 6px 0 0;
+  z-index:5;pointer-events:none;
+  margin-bottom:clamp(2px,0.3vh,6px);
+}
+.col-header h2{
+  font-size:clamp(10px,0.85vw,14px);font-weight:600;letter-spacing:0.5px;
+  background:linear-gradient(135deg,#4FC3F7,#81C784);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.col-header .ch-sub{font-size:clamp(7px,0.55vw,9px);color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+/* ═══ GROUPS & NODES ═══ */
+.group{display:flex;flex-direction:column;gap:clamp(5px,0.7vh,10px)}
+.group-label{
+  font-size:clamp(7px,0.55vw,9px);font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  color:rgba(255,255,255,.2);padding-left:2px;margin-bottom:1px;
+  position:sticky;top:clamp(105px,10vh,130px);z-index:4;
+  background:linear-gradient(180deg,rgba(11,16,24,.9),transparent);padding:2px 4px;
+}
+
+.node{
+  position:relative;padding:clamp(5px,0.7vh,9px) clamp(8px,0.9vw,14px);
+  border-radius:clamp(4px,0.4vw,6px);
+  font-family:'JetBrains Mono','SF Mono','Consolas',monospace;
+  font-size:clamp(9px,0.72vw,12px);font-weight:500;
+  cursor:pointer;white-space:nowrap;letter-spacing:.2px;
+  transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s ease,opacity .4s ease;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;
+}
+/* Entrance stagger handled by JS (IntersectionObserver) */
+
+.node:hover{transform:scale(1.12)!important;z-index:50}
+
+/* Color variants */
+.node.api{
+  background:linear-gradient(135deg,rgba(79,195,247,.12),rgba(79,195,247,.06));
+  border:1px solid rgba(79,195,247,.25);color:#4FC3F7;
+  box-shadow:0 0 10px rgba(79,195,247,.06),inset 0 1px 0 rgba(79,195,247,.08);
+}
+.node.api:hover{box-shadow:0 0 22px rgba(79,195,247,.28),0 0 50px rgba(79,195,247,.1),inset 0 1px 0 rgba(79,195,247,.18);border-color:rgba(79,195,247,.5)}
+.node.core{
+  background:linear-gradient(135deg,rgba(129,199,132,.12),rgba(129,199,132,.06));
+  border:1px solid rgba(129,199,132,.25);color:#81C784;
+  box-shadow:0 0 10px rgba(129,199,132,.06),inset 0 1px 0 rgba(129,199,132,.08);
+}
+.node.core:hover{box-shadow:0 0 22px rgba(129,199,132,.28),0 0 50px rgba(129,199,132,.1),inset 0 1px 0 rgba(129,199,132,.18);border-color:rgba(129,199,132,.5)}
+.node.ext{
+  background:linear-gradient(135deg,rgba(255,183,77,.12),rgba(255,183,77,.06));
+  border:1px solid rgba(255,183,77,.25);color:#FFB74D;
+  box-shadow:0 0 10px rgba(255,183,77,.06),inset 0 1px 0 rgba(255,183,77,.08);
+}
+.node.ext:hover{box-shadow:0 0 22px rgba(255,183,77,.28),0 0 50px rgba(255,183,77,.1),inset 0 1px 0 rgba(255,183,77,.18);border-color:rgba(255,183,77,.5)}
+.node.ws{
+  background:linear-gradient(135deg,rgba(206,147,216,.12),rgba(206,147,216,.06));
+  border:1px solid rgba(206,147,216,.25);color:#CE93D8;
+  box-shadow:0 0 10px rgba(206,147,216,.06),inset 0 1px 0 rgba(206,147,216,.08);
+}
+.node.ws:hover{box-shadow:0 0 22px rgba(206,147,216,.28),0 0 50px rgba(206,147,216,.1),inset 0 1px 0 rgba(206,147,216,.18);border-color:rgba(206,147,216,.5)}
+
+/* Entrance animation (triggered by IntersectionObserver) */
+.node.enter-ready{opacity:0;transform:translateY(12px) scale(.9)}
+.node.enter-active{
+  animation:node-enter .5s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+@keyframes node-enter{to{opacity:1;transform:translateY(0) scale(1)}}
+.node.pulse{
+  animation:node-breathe 3s ease-in-out infinite;
+}
+@keyframes node-breathe{
+  0%,100%{box-shadow:0 0 6px rgba(129,199,132,.12),inset 0 1px 0 rgba(129,199,132,.08)}
+  50%{box-shadow:0 0 18px rgba(129,199,132,.3),0 0 40px rgba(129,199,132,.08),inset 0 1px 0 rgba(129,199,132,.16)}
+}
+
+/* Linked highlighting */
+.node.hl-hover{box-shadow:0 0 28px rgba(255,255,255,.35),0 0 60px rgba(79,195,247,.2)!important;border-color:rgba(255,255,255,.7)!important;transform:scale(1.15)!important;z-index:60}
+.node.hl-upstream{box-shadow:0 0 16px rgba(129,199,132,.35)!important;border-color:rgba(129,199,132,.55)!important}
+.node.hl-downstream{box-shadow:0 0 16px rgba(79,195,247,.35)!important;border-color:rgba(79,195,247,.55)!important}
+.node.dimmed{opacity:.1!important;pointer-events:none;transition:opacity .35s}
+
+/* ═══ SVG CONNECTIONS ═══ */
+.conn-layer{
+  position:absolute;top:0;left:0;pointer-events:none;z-index:0;
+}
+.conn-line{fill:none;stroke-linecap:round;stroke-linejoin:round;transition:opacity .4s,stroke-width .2s}
+.conn-line.core{stroke:#4FC3F7;stroke-width:3;opacity:.45;filter:url(#glow)}
+.conn-line.secondary{stroke:#546E7A;stroke-width:1.5;opacity:.35}
+.conn-line.dashed{stroke-dasharray:5,4}
+.conn-line:hover{stroke-width:4;opacity:.9;filter:url(#glow-strong)}
+.conn-line.dimmed{opacity:.03!important}
+.conn-line.highlight{opacity:.85;stroke-width:3;filter:url(#glow-strong)}
+.conn-line.hl-up{stroke:#81C784!important;stroke-width:2.5;opacity:.7}
+.conn-line.hl-down{stroke:#4FC3F7!important;stroke-width:2.5;opacity:.7}
+
+.conn-particle{will-change:transform}
+.conn-particle.paused{animation-play-state:paused!important}
+
+/* ═══ TOOLTIP ═══ */
+.tooltip{
+  position:fixed;z-index:200;pointer-events:none;
+  background:rgba(17,24,34,.96);border:1px solid rgba(255,255,255,.12);
+  border-radius:10px;padding:12px 14px;font-size:11px;line-height:1.6;
+  backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,0,0,.5);
+  max-width:240px;opacity:0;transform:translateY(4px);
+  transition:opacity .15s,transform .15s;
+  font-family:'Inter','PingFang SC',sans-serif;
+}
+.tooltip.show{opacity:1;transform:translateY(0)}
+.tooltip .tt-name{font-weight:600;font-size:13px;margin-bottom:3px}
+.tooltip .tt-desc{color:#8892B0;font-size:10px;margin-bottom:5px}
+.tooltip .tt-path{font-size:9px;color:rgba(255,255,255,.3);margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,.06)}
+
+/* ═══ NAV ARROWS ═══ */
+.nav-arrow{
+  position:fixed;top:50%;transform:translateY(-50%);z-index:150;
+  width:clamp(36px,4vw,48px);height:clamp(36px,4vw,48px);
+  border-radius:50%;border:1px solid rgba(255,255,255,.12);
+  background:rgba(11,16,24,.8);color:#8892B0;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(8px);transition:all .25s;
+  font-size:clamp(14px,1.5vw,20px);
+}
+.nav-arrow:hover{background:rgba(79,195,247,.15);border-color:#4FC3F7;color:#4FC3F7;box-shadow:0 0 20px rgba(79,195,247,.2)}
+.nav-arrow:active{transform:translateY(-50%) scale(.92)}
+.nav-arrow.disabled{opacity:.2;pointer-events:none}
+.nav-arrow.left{left:clamp(8px,1vw,16px)}
+.nav-arrow.right{right:clamp(8px,1vw,16px)}
+
+/* ═══ SCROLL HINT ═══ */
+.scroll-hint{
+  position:fixed;bottom:clamp(12px,2vh,20px);left:50%;transform:translateX(-50%);
+  color:rgba(255,255,255,.18);font-size:clamp(9px,0.75vw,11px);z-index:50;
+  pointer-events:none;transition:opacity .8s;
+  font-family:'Inter','PingFang SC',sans-serif;
+  text-align:center;
+}
+
+/* ═══ MOBILE ═══ */
+@media(max-width:900px){
+  .col-l1{width:85vw;min-width:320px}
+  .col-l2{width:70vw;min-width:200px}
+  .col-l3{width:65vw;min-width:180px}
+  .col-l4{width:75vw;min-width:260px}
+  .col-l5{width:85vw;min-width:340px}
+  .col-l6{width:75vw;min-width:260px}
+  .nav-arrow{width:32px;height:32px;font-size:12px}
+  .status-block{font-size:9px}
+  .controls{gap:2px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ FIXED BACKGROUND GRID (parallax) ═══ -->
+<div class="bg-grid" id="bgGrid"></div>
+
+<!-- ═══ TOP PANEL ═══ -->
+<div class="top-panel" id="topPanel">
+  <div class="title-row">
+    <div class="title-block">
+      <h1>Claudio API Architecture</h1>
+      <p>Intelligent home assistant — scroll-to-explore dataflow</p>
+    </div>
+    <div class="controls">
+      <button class="ctrl-btn active" data-mode="all">全部展开</button>
+      <button class="ctrl-btn" data-mode="core">核心链路</button>
+      <button class="ctrl-btn" data-mode="reset">重置</button>
+    </div>
+  </div>
+  <div class="status-row">
+    <div class="status-block">
+      <div class="status-item"><span class="status-dot green"></span>运行中</div>
+      <div class="status-item">LLM <span class="status-val">DeepSeek V3</span></div>
+      <div class="status-item">连线 <span class="status-val" id="connCount">—</span></div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot api"></span>API</div>
+      <div class="legend-item"><span class="legend-dot core"></span>核心模块</div>
+      <div class="legend-item"><span class="legend-dot ext"></span>外部依赖</div>
+      <div class="legend-item"><span class="legend-dot ws"></span>WebSocket</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCROLL CONTAINER ═══ -->
+<div class="scroll-container" id="scrollContainer">
+
+<svg class="conn-layer" id="connLayer"></svg>
+
+<div class="arch-grid" id="archGrid">
+
+<!-- ════════ LAYER 1: API Endpoints ════════ -->
+<div class="snap-col col-l1" id="col1">
+  <div class="col-header"><h2>API 端点层</h2><div class="ch-sub">32 endpoints</div></div>
+
+  <div class="group"><div class="group-label">对话入口</div>
+    <div class="node api enter-ready" id="api-chat">POST /api/chat</div>
+    <div class="node api enter-ready" id="api-settings">POST /api/settings</div>
+    <div class="node api enter-ready" id="api-reload">POST /api/reload</div>
+  </div>
+  <div class="group"><div class="group-label">音乐控制</div>
+    <div class="node api enter-ready" id="api-music-search">GET /api/music/search</div>
+    <div class="node api enter-ready" id="api-music-play">GET /api/music/play</div>
+    <div class="node api enter-ready" id="api-music-refresh">POST /api/music/refresh</div>
+    <div class="node api enter-ready" id="api-music-lyrics">GET /api/music/lyrics</div>
+    <div class="node api enter-ready" id="api-music-recommend">GET /api/music/recommend</div>
+    <div class="node api enter-ready" id="api-now">GET /api/now</div>
+  </div>
+  <div class="group"><div class="group-label">投屏控制</div>
+    <div class="node api enter-ready" id="api-upnp-scan">GET /api/upnp/scan</div>
+    <div class="node api enter-ready" id="api-upnp-push">POST /api/upnp/push</div>
+    <div class="node api enter-ready" id="api-upnp-play">POST /api/upnp/play</div>
+    <div class="node api enter-ready" id="api-upnp-pause">POST /api/upnp/pause</div>
+    <div class="node api enter-ready" id="api-upnp-stop">POST /api/upnp/stop</div>
+  </div>
+  <div class="group"><div class="group-label">AI 电台</div>
+    <div class="node api enter-ready" id="api-radio-start">POST /api/radio/start</div>
+    <div class="node api enter-ready" id="api-radio-stop">POST /api/radio/stop</div>
+    <div class="node api enter-ready" id="api-radio-next">GET /api/radio/next</div>
+    <div class="node api enter-ready" id="api-radio-status">GET /api/radio/status</div>
+  </div>
+  <div class="group"><div class="group-label">数据管理</div>
+    <div class="node api enter-ready" id="api-context">GET /api/context</div>
+    <div class="node api enter-ready" id="api-profile-read">GET /api/profile/read</div>
+    <div class="node api enter-ready" id="api-profile-save">POST /api/profile/save</div>
+    <div class="node api enter-ready" id="api-schedule">GET /api/schedule</div>
+    <div class="node api enter-ready" id="api-schedule-trigger">POST /api/schedule/trigger/:name</div>
+  </div>
+  <div class="group"><div class="group-label">RAG 知识库</div>
+    <div class="node api enter-ready" id="api-rag-index">POST /api/rag/index</div>
+    <div class="node api enter-ready" id="api-rag-search">GET /api/rag/search</div>
+    <div class="node api enter-ready" id="api-rag-status">GET /api/rag/status</div>
+    <div class="node api enter-ready" id="api-health">GET /api/health</div>
+  </div>
+  <div class="group"><div class="group-label">状态查询</div>
+    <div class="node api enter-ready" id="api-messages">GET /api/messages</div>
+    <div class="node api enter-ready" id="api-state-prune">POST /api/state/prune</div>
+    <div class="node api enter-ready" id="api-state-clear">POST /api/state/clear</div>
+    <div class="node api enter-ready" id="api-state">GET /api/state</div>
+  </div>
+  <div class="group"><div class="group-label">实时推送</div>
+    <div class="node ws enter-ready" id="ws-stream">WS /stream</div>
+  </div>
+</div>
+
+<!-- ════════ LAYER 2: Entry ════════ -->
+<div class="snap-col col-l2" id="col2">
+  <div class="col-header"><h2>入口层</h2><div class="ch-sub">Auth &amp; Router</div></div>
+  <div class="group"><div class="group-label">认证与路由</div>
+    <div class="node core enter-ready" id="mod-auth">auth</div>
+    <div class="node core pulse enter-ready" id="mod-router">router</div>
+  </div>
+</div>
+
+<!-- ════════ LAYER 3: Orchestrator ════════ -->
+<div class="snap-col col-l3" id="col3">
+  <div class="col-header"><h2>调度层</h2><div class="ch-sub">Orchestrator</div></div>
+  <div class="group"><div class="group-label">对话主循环</div>
+    <div class="node core pulse enter-ready" id="mod-runChat">runChat</div>
+  </div>
+</div>
+
+<!-- ════════ LAYER 4: Processors ════════ -->
+<div class="snap-col col-l4" id="col4">
+  <div class="col-header"><h2>处理层</h2><div class="ch-sub">Main Processors</div></div>
+  <div class="group"><div class="group-label">上下文聚合</div>
+    <div class="node core enter-ready" id="mod-collectContext">collectContext</div>
+  </div>
+  <div class="group"><div class="group-label">推理引擎</div>
+    <div class="node core enter-ready" id="mod-buildSystemPrompt">buildSystemPrompt</div>
+    <div class="node core pulse enter-ready" id="mod-llm-ask">llm.ask</div>
+  </div>
+  <div class="group"><div class="group-label">输出管道</div>
+    <div class="node core enter-ready" id="mod-emitSay">emitSay</div>
+  </div>
+</div>
+
+<!-- ════════ LAYER 5: Sub Modules ════════ -->
+<div class="snap-col col-l5" id="col5">
+  <div class="col-header"><h2>子模块层</h2><div class="ch-sub">Context · Music · Engine</div></div>
+  <div class="group"><div class="group-label">Context 采集源</div>
+    <div class="node core enter-ready" id="mod-weather">weather</div>
+    <div class="node core enter-ready" id="mod-feishu">feishu</div>
+    <div class="node core enter-ready" id="mod-rss">rss</div>
+    <div class="node core enter-ready" id="mod-taste">taste</div>
+    <div class="node core enter-ready" id="mod-memory">memory</div>
+    <div class="node core enter-ready" id="mod-history">history</div>
+  </div>
+  <div class="group"><div class="group-label">Prompt 组装</div>
+    <div class="node core enter-ready" id="mod-persona">persona</div>
+    <div class="node core enter-ready" id="mod-scene">scene</div>
+    <div class="node core enter-ready" id="mod-rag">rag</div>
+  </div>
+  <div class="group"><div class="group-label">输出下游</div>
+    <div class="node core enter-ready" id="mod-fishTts">fishTts</div>
+    <div class="node core enter-ready" id="mod-resolveAndPlay">resolveAndPlay</div>
+  </div>
+  <div class="group"><div class="group-label">音乐引擎</div>
+    <div class="node core enter-ready" id="mod-ncm">ncm</div>
+    <div class="node core enter-ready" id="mod-local">local</div>
+    <div class="node core enter-ready" id="mod-upnp">upnp</div>
+  </div>
+  <div class="group"><div class="group-label">引擎与存储</div>
+    <div class="node core enter-ready" id="mod-radio">radio</div>
+    <div class="node core enter-ready" id="mod-scheduler">scheduler</div>
+    <div class="node core enter-ready" id="mod-state">state</div>
+  </div>
+</div>
+
+<!-- ════════ LAYER 6: External ════════ -->
+<div class="snap-col col-l6" id="col6">
+  <div class="col-header"><h2>外部依赖层</h2><div class="ch-sub">External APIs &amp; Services</div></div>
+  <div class="group"><div class="group-label">外部服务</div>
+    <div class="node ext enter-ready" id="ext-netease">网易云音乐 API</div>
+    <div class="node ext enter-ready" id="ext-feishu">飞书 OpenAPI</div>
+    <div class="node ext enter-ready" id="ext-openweather">OpenWeather</div>
+    <div class="node ext enter-ready" id="ext-siliconflow">硅基流动 API</div>
+    <div class="node ext enter-ready" id="ext-deepseek">DeepSeek API</div>
+    <div class="node ext enter-ready" id="ext-ollama">Ollama</div>
+    <div class="node ext enter-ready" id="ext-fishtts">Fish TTS</div>
+    <div class="node ext enter-ready" id="ext-rss">RSS 源 &times;4</div>
+    <div class="node ext enter-ready" id="ext-sqlite">SQLite</div>
+    <div class="node ext enter-ready" id="ext-dlna">DLNA 设备</div>
+  </div>
+</div>
+
+</div><!-- /arch-grid -->
+</div><!-- /scroll-container -->
+
+<!-- ═══ NAV ARROWS ═══ -->
+<div class="nav-arrow left" id="navLeft">◀</div>
+<div class="nav-arrow right" id="navRight">▶</div>
+
+<!-- ═══ SCROLL HINT ═══ -->
+<div class="scroll-hint" id="scrollHint">◀ 左右滚动浏览各层 ▶<br><span style="font-size:9px;opacity:.6">点击节点高亮链路 · 滚轮缩放</span></div>
+
+<!-- ═══ TOOLTIP ═══ -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONNECTION DEFINITIONS — exhaustive, per spec checklist
+// core=true → thick cyan glow line + particle
+// core=false → thin gray line
+// dashed=true → dotted line (Ollama fallback)
+// ═══════════════════════════════════════════════════════════
+const connections = [
+  /* 1. API → auth → router */
+  {from:'api-chat',to:'mod-auth',core:true},
+  {from:'mod-auth',to:'mod-router',core:true},
+
+  /* 2. router → runChat (LLM) + router → ncm (music direct) */
+  {from:'mod-router',to:'mod-runChat',core:true},
+  {from:'mod-router',to:'mod-ncm',core:false},
+  {from:'mod-router',to:'mod-upnp',core:false},
+  {from:'mod-router',to:'mod-radio',core:false},
+  {from:'mod-router',to:'mod-scheduler',core:false},
+  {from:'mod-router',to:'mod-state',core:false},
+  {from:'mod-router',to:'mod-rag',core:false},
+  {from:'mod-router',to:'mod-collectContext',core:false},
+
+  /* 3. runChat → downstream */
+  {from:'mod-runChat',to:'mod-collectContext',core:true},
+  {from:'mod-runChat',to:'mod-rag',core:true},
+  {from:'mod-runChat',to:'mod-buildSystemPrompt',core:true},
+  {from:'mod-runChat',to:'mod-llm-ask',core:true},
+  {from:'mod-runChat',to:'mod-fishTts',core:true},
+  {from:'mod-runChat',to:'mod-emitSay',core:true},
+
+  /* 3. collectContext → sources */
+  {from:'mod-collectContext',to:'mod-weather',core:false},
+  {from:'mod-collectContext',to:'mod-feishu',core:false},
+  {from:'mod-collectContext',to:'mod-rss',core:false},
+  {from:'mod-collectContext',to:'mod-taste',core:false},
+  {from:'mod-collectContext',to:'mod-memory',core:false},
+  {from:'mod-collectContext',to:'mod-history',core:false},
+
+  /* 5. buildSystemPrompt → persona / scene / history */
+  {from:'mod-buildSystemPrompt',to:'mod-persona',core:true},
+  {from:'mod-buildSystemPrompt',to:'mod-scene',core:true},
+  {from:'mod-buildSystemPrompt',to:'mod-history',core:true},
+
+  /* 6. llm.ask → DeepSeek → Ollama (dashed fallback) */
+  {from:'mod-llm-ask',to:'ext-deepseek',core:true},
+  {from:'ext-deepseek',to:'ext-ollama',core:false,dashed:true},
+
+  /* 7. fishTts → Fish TTS */
+  {from:'mod-fishTts',to:'ext-fishtts',core:false},
+
+  /* 8. emitSay → WS /stream */
+  {from:'mod-emitSay',to:'ws-stream',core:true},
+
+  /* 9. emitSay → resolveAndPlay → ncm → 网易云 */
+  {from:'mod-emitSay',to:'mod-resolveAndPlay',core:true},
+  {from:'mod-resolveAndPlay',to:'mod-ncm',core:true},
+  {from:'mod-ncm',to:'ext-netease',core:false},
+
+  /* 10. radio → llm.ask / ncm */
+  {from:'mod-radio',to:'mod-llm-ask',core:false},
+  {from:'mod-radio',to:'mod-ncm',core:false},
+
+  /* 11. upnp API → upnp → DLNA */
+  {from:'api-upnp-scan',to:'mod-upnp',core:false},
+  {from:'api-upnp-push',to:'mod-upnp',core:false},
+  {from:'api-upnp-play',to:'mod-upnp',core:false},
+  {from:'api-upnp-pause',to:'mod-upnp',core:false},
+  {from:'api-upnp-stop',to:'mod-upnp',core:false},
+  {from:'mod-upnp',to:'ext-dlna',core:false},
+
+  /* 12. rss API → rss → RSS源 */
+  {from:'mod-rss',to:'ext-rss',core:false},
+
+  /* 13. feishu → 飞书 */
+  {from:'mod-feishu',to:'ext-feishu',core:false},
+
+  /* 14. weather → OpenWeather */
+  {from:'mod-weather',to:'ext-openweather',core:false},
+
+  /* 15. state → SQLite */
+  {from:'mod-state',to:'ext-sqlite',core:false},
+
+  /* 16. scheduler → runChat */
+  {from:'mod-scheduler',to:'mod-runChat',core:false},
+
+  /* 17. history → llm.ask (conversation history feeds LLM) */
+  {from:'mod-history',to:'mod-llm-ask',core:true},
+
+  /* 4. rag → 硅基流动 */
+  {from:'mod-rag',to:'ext-siliconflow',core:false},
+
+  /* Additional API → module routes */
+  {from:'api-music-search',to:'mod-ncm',core:false},
+  {from:'api-music-play',to:'mod-ncm',core:false},
+  {from:'api-music-refresh',to:'mod-ncm',core:false},
+  {from:'api-music-lyrics',to:'mod-ncm',core:false},
+  {from:'api-music-recommend',to:'mod-ncm',core:false},
+  {from:'api-now',to:'mod-ncm',core:false},
+  {from:'api-radio-start',to:'mod-radio',core:false},
+  {from:'api-radio-stop',to:'mod-radio',core:false},
+  {from:'api-radio-next',to:'mod-radio',core:false},
+  {from:'api-radio-status',to:'mod-radio',core:false},
+  {from:'api-rag-index',to:'mod-rag',core:false},
+  {from:'api-rag-search',to:'mod-rag',core:false},
+  {from:'api-rag-status',to:'mod-rag',core:false},
+  {from:'api-health',to:'mod-rag',core:false},
+  {from:'api-context',to:'mod-collectContext',core:false},
+  {from:'api-profile-read',to:'mod-state',core:false},
+  {from:'api-profile-save',to:'mod-state',core:false},
+  {from:'api-schedule',to:'mod-scheduler',core:false},
+  {from:'api-schedule-trigger',to:'mod-scheduler',core:false},
+  {from:'api-messages',to:'mod-state',core:false},
+  {from:'api-state-prune',to:'mod-state',core:false},
+  {from:'api-state-clear',to:'mod-state',core:false},
+  {from:'api-state',to:'mod-state',core:false},
+
+  /* Settings / reload through auth */
+  {from:'api-settings',to:'mod-auth',core:false},
+  {from:'api-reload',to:'mod-auth',core:false},
+
+  /* local music → local files (self-contained, no external link needed) */
+
+  /* memory → state (persistence) */
+  {from:'mod-memory',to:'mod-state',core:false},
+  {from:'mod-taste',to:'mod-state',core:false},
+  {from:'mod-persona',to:'mod-state',core:false},
+
+  /* scheduler → radio (scheduled radio triggers) */
+  {from:'mod-scheduler',to:'mod-radio',core:false},
+];
+
+// ═══════════════════════════════════════════════════════════
+// NODE METADATA
+// ═══════════════════════════════════════════════════════════
+const nodeMeta = {
+  'api-chat':{desc:'主对话入口 /chat，异步流式响应，支持 SSE'},
+  'api-settings':{desc:'获取/更新系统与用户配置'},
+  'api-reload':{desc:'热重载配置与模块，无需重启'},
+  'api-music-search':{desc:'搜索网易云音乐曲库',section:'音乐'},
+  'api-music-play':{desc:'播放 / 切换指定歌曲',section:'音乐'},
+  'api-music-refresh':{desc:'刷新播放列表缓存',section:'音乐'},
+  'api-music-lyrics':{desc:'获取当前歌曲歌词',section:'音乐'},
+  'api-music-recommend':{desc:'基于用户画像的个性化推荐',section:'音乐'},
+  'api-now':{desc:'查询当前播放状态与进度',section:'音乐'},
+  'api-upnp-scan':{desc:'扫描局域网 DLNA/UPnP 设备',section:'投屏'},
+  'api-upnp-push':{desc:'推送媒体 URL 到 DLNA 设备',section:'投屏'},
+  'api-upnp-play':{desc:'控制 DLNA 设备播放',section:'投屏'},
+  'api-upnp-pause':{desc:'暂停 DLNA 播放',section:'投屏'},
+  'api-upnp-stop':{desc:'停止 DLNA 播放',section:'投屏'},
+  'api-radio-start':{desc:'启动 AI 电台，基于 mood/tags 生成歌单',section:'电台'},
+  'api-radio-stop':{desc:'停止当前 AI 电台播放',section:'电台'},
+  'api-radio-next':{desc:'切换到下一首电台曲目',section:'电台'},
+  'api-radio-status':{desc:'查询电台运行状态',section:'电台'},
+  'api-context':{desc:'获取当前上下文快照（天气/日程/记忆等）',section:'数据'},
+  'api-profile-read':{desc:'读取用户长期画像',section:'数据'},
+  'api-profile-save':{desc:'保存/更新用户画像',section:'数据'},
+  'api-schedule':{desc:'查看所有定时任务',section:'数据'},
+  'api-schedule-trigger':{desc:'手动触发指定定时任务',section:'数据'},
+  'api-rag-index':{desc:'索引新文档到知识库',section:'RAG'},
+  'api-rag-search':{desc:'语义搜索知识库内容',section:'RAG'},
+  'api-rag-status':{desc:'查询知识库索引状态',section:'RAG'},
+  'api-health':{desc:'健康检查端点，返回各模块状态',section:'RAG'},
+  'api-messages':{desc:'获取历史对话消息列表',section:'状态'},
+  'api-state-prune':{desc:'裁剪旧状态数据',section:'状态'},
+  'api-state-clear':{desc:'清空所有状态',section:'状态'},
+  'api-state':{desc:'查询完整持久化状态',section:'状态'},
+  'ws-stream':{desc:'WebSocket 实时推送流，双向通信'},
+  'mod-auth':{desc:'身份验证中间件，JWT 校验'},
+  'mod-router':{desc:'请求路由分发：LLM 模式 vs 音乐直连 vs 投屏直连'},
+  'mod-runChat':{desc:'对话主循环：上下文聚合 → SystemPrompt 构建 → LLM 推理 → 输出'},
+  'mod-collectContext':{desc:'聚合多维上下文源：天气/飞书/RSS/偏好/记忆/历史'},
+  'mod-weather':{desc:'天气信息采集，调用 OpenWeather API'},
+  'mod-feishu':{desc:'飞书消息/文档/日程接入'},
+  'mod-rss':{desc:'RSS 订阅源内容聚合，支持 4 个源'},
+  'mod-taste':{desc:'用户偏好分析与建模'},
+  'mod-memory':{desc:'长期记忆存取，持久化到 state'},
+  'mod-history':{desc:'对话历史管理，窗口裁剪与上下文注入'},
+  'mod-buildSystemPrompt':{desc:'动态构建 System Prompt：persona + scene + history'},
+  'mod-persona':{desc:'AI 人设定义与管理'},
+  'mod-scene':{desc:'场景识别：聊天/音乐/查询/提醒'},
+  'mod-rag':{desc:'RAG 检索增强生成，硅基流动 Embedding'},
+  'mod-llm-ask':{desc:'LLM 调用抽象层：DeepSeek 主 / Ollama 降级'},
+  'mod-fishTts':{desc:'Fish TTS 语音合成调用'},
+  'mod-emitSay':{desc:'输出管道：格式化消息 → WebSocket 推送'},
+  'mod-resolveAndPlay':{desc:'解析播放意图 → 匹配曲目 → 调用 ncm'},
+  'mod-ncm':{desc:'网易云音乐集成，封装播放/搜索/歌词/推荐'},
+  'mod-local':{desc:'本地音乐库管理'},
+  'mod-upnp':{desc:'DLNA/UPnP 投屏控制，设备发现与媒体推送'},
+  'mod-radio':{desc:'AI 电台引擎：基于心情/标签生成歌单 → 调用 ncm 或 LLM'},
+  'mod-scheduler':{desc:'定时任务调度器：cron 表达式，触发 runChat 或 radio'},
+  'mod-state':{desc:'持久化状态存储（SQLite），用户画像/记忆/配置/状态'},
+  'ext-netease':{desc:'网易云音乐 OpenAPI'},
+  'ext-feishu':{desc:'飞书开放平台 API'},
+  'ext-openweather':{desc:'OpenWeatherMap 天气数据'},
+  'ext-siliconflow':{desc:'硅基流动 Embedding / Reranker 服务'},
+  'ext-deepseek':{desc:'DeepSeek V3 大语言模型（主 Provider）'},
+  'ext-ollama':{desc:'本地 Ollama 推理（降级备用，虚线标记）'},
+  'ext-fishtts':{desc:'Fish TTS 语音合成服务'},
+  'ext-rss':{desc:'4 个 RSS 信息源聚合'},
+  'ext-sqlite':{desc:'本地 SQLite 数据库'},
+  'ext-dlna':{desc:'局域网 DLNA 投屏设备'},
+};
+
+// ═══════════════════════════════════════════════════════════
+// GLOBALS
+// ═══════════════════════════════════════════════════════════
+const svgNS = 'http://www.w3.org/2000/svg';
+const connLayer = document.getElementById('connLayer');
+const archGrid = document.getElementById('archGrid');
+const scrollContainer = document.getElementById('scrollContainer');
+const bgGrid = document.getElementById('bgGrid');
+const navLeft = document.getElementById('navLeft');
+const navRight = document.getElementById('navRight');
+const scrollHint = document.getElementById('scrollHint');
+const tooltip = document.getElementById('tooltip');
+let allLines = [], allParticles = [], highlighted = new Set();
+let allNodes = [];
+
+// Build adjacency index for fast graph traversal
+const adjDown = {}; // from → [to, ...]
+const adjUp = {};   // to → [from, ...]
+connections.forEach(c => {
+  if (!adjDown[c.from]) adjDown[c.from] = [];
+  adjDown[c.from].push(c.to);
+  if (!adjUp[c.to]) adjUp[c.to] = [];
+  adjUp[c.to].push(c.from);
+});
+
+// ═══════════════════════════════════════════════════════════
+// GEOMETRY — node pos relative to scroll container content
+// ═══════════════════════════════════════════════════════════
+function nodePos(el) {
+  const r = el.getBoundingClientRect();
+  const cr = scrollContainer.getBoundingClientRect();
+  return {
+    cx: r.left - cr.left + scrollContainer.scrollLeft + r.width/2,
+    cy: r.top - cr.top + scrollContainer.scrollTop + r.height/2,
+    rx: r.left - cr.left + scrollContainer.scrollLeft + r.width,
+    lx: r.left - cr.left + scrollContainer.scrollLeft,
+    ty: r.top - cr.top + r.height/2, // for vertical offset from container top
+  };
+}
+
+function orthPath(sx, sy, tx, ty) {
+  const mx = (sx + tx) / 2;
+  return `M${sx},${sy} L${mx},${sy} L${mx},${ty} L${tx},${ty}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// DRAW ALL CONNECTIONS
+// ═══════════════════════════════════════════════════════════
+function drawConnections() {
+  connLayer.innerHTML = '';
+  allLines = []; allParticles = [];
+
+  const gw = archGrid.scrollWidth + 80;
+  const gh = Math.max(archGrid.scrollHeight + 80, window.innerHeight * 2);
+  connLayer.setAttribute('width', gw);
+  connLayer.setAttribute('height', gh);
+  connLayer.setAttribute('viewBox', `0 0 ${gw} ${gh}`);
+
+  // Defs
+  const defs = document.createElementNS(svgNS, 'defs');
+
+  // Arrow markers
+  [{id:'arr-core',c:'#4FC3F7'},{id:'arr-sec',c:'#546E7A'}].forEach(({id,c})=>{
+    const m = document.createElementNS(svgNS, 'marker');
+    m.setAttribute('id',id);m.setAttribute('markerWidth','8');m.setAttribute('markerHeight','6');
+    m.setAttribute('refX','7');m.setAttribute('refY','3');m.setAttribute('orient','auto');
+    const p = document.createElementNS(svgNS, 'path');
+    p.setAttribute('d','M0,0 L8,3 L0,6 L2,3 Z');p.setAttribute('fill',c);
+    m.appendChild(p);defs.appendChild(m);
+  });
+
+  // Glow filters
+  [{id:'glow',sd:'2'},{id:'glow-strong',sd:'4'}].forEach(({id,sd})=>{
+    const f=document.createElementNS(svgNS,'filter');f.setAttribute('id',id);
+    f.innerHTML=`<feGaussianBlur stdDeviation="${sd}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>`;
+    defs.appendChild(f);
+  });
+  connLayer.appendChild(defs);
+
+  const lg = document.createElementNS(svgNS, 'g');
+  const pg = document.createElementNS(svgNS, 'g');
+
+  connections.forEach((conn, i) => {
+    const fe = document.getElementById(conn.from), te = document.getElementById(conn.to);
+    if (!fe || !te) return;
+    const fp = nodePos(fe), tp = nodePos(te);
+    const pathD = orthPath(fp.rx, fp.cy, tp.lx, tp.cy);
+    const cls = conn.core ? 'core' : 'secondary';
+    const marker = conn.core ? 'url(#arr-core)' : 'url(#arr-sec)';
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('class', `conn-line ${cls}${conn.dashed?' dashed':''}`);
+    path.setAttribute('marker-end', marker);
+    path.setAttribute('data-from', conn.from);
+    path.setAttribute('data-to', conn.to);
+    path.setAttribute('data-core', conn.core?'1':'0');
+    path.setAttribute('data-path', pathD);
+    path.style.pointerEvents = 'stroke';
+    path.addEventListener('mouseenter', () => {
+      if (!highlighted.size) { path.style.strokeWidth = '5'; path.style.opacity = '.9'; path.style.filter = 'url(#glow-strong)'; }
+    });
+    path.addEventListener('mouseleave', () => {
+      if (!highlighted.size) { path.style.strokeWidth = ''; path.style.opacity = ''; path.style.filter = ''; }
+    });
+    lg.appendChild(path);
+    allLines.push(path);
+
+    // Particle on core lines
+    if (conn.core) {
+      const pt = document.createElementNS(svgNS, 'circle');
+      pt.setAttribute('r', '3'); pt.setAttribute('fill', '#4FC3F7');
+      pt.setAttribute('filter', 'url(#glow)');
+      pt.setAttribute('class', 'conn-particle');
+      pt.setAttribute('data-from', conn.from);
+      pt.setAttribute('data-to', conn.to);
+      pt.setAttribute('data-core', '1');
+      const anim = document.createElementNS(svgNS, 'animateMotion');
+      anim.setAttribute('dur', `${8+Math.random()*4}s`);
+      anim.setAttribute('repeatCount', 'indefinite');
+      anim.setAttribute('path', pathD);
+      anim.setAttribute('begin', `${Math.random()*8}s`);
+      pt.appendChild(anim);
+      pg.appendChild(pt);
+      allParticles.push(pt);
+    }
+  });
+
+  connLayer.appendChild(lg);
+  connLayer.appendChild(pg);
+
+  document.getElementById('connCount').textContent = connections.length;
+
+  // Re-apply highlight state after redraw
+  if (highlighted.size) {
+    allLines.forEach(l => {
+      const f = l.getAttribute('data-from'), t = l.getAttribute('data-to');
+      const on = highlighted.has(f) && highlighted.has(t);
+      l.classList.toggle('highlight', on);
+      l.classList.toggle('dimmed', !on);
+    });
+    allParticles.forEach(p => {
+      const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+      p.style.opacity = highlighted.has(f) && highlighted.has(t) ? '1' : '.04';
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOOLTIP
+// ═══════════════════════════════════════════════════════════
+function showTT(e, el) {
+  const m = nodeMeta[el.id]; if (!m) return;
+  const colors = {api:'#4FC3F7',core:'#81C784',ext:'#FFB74D',ws:'#CE93D8'};
+  const tc = [...el.classList].find(c=>colors[c])||'core';
+
+  let parts = []; let path = '';
+  if (adjUp[el.id]) { parts.push(`上游: ${adjUp[el.id].length} 个`); path+='↑'; }
+  if (adjDown[el.id]) { parts.push(`下游: ${adjDown[el.id].length} 个`); path+='↓'; }
+
+  tooltip.innerHTML = `<div class="tt-name" style="color:${colors[tc]}">${el.textContent.trim()}</div><div class="tt-desc">${m.desc||''}</div>${parts.length?`<div class="tt-path">${parts.join(' · ')}${path}</div>`:''}`;
+  tooltip.classList.add('show');
+  let x = e.clientX+14, y = e.clientY+10;
+  if (x+tooltip.offsetWidth > window.innerWidth-12) x = e.clientX-tooltip.offsetWidth-14;
+  if (y+tooltip.offsetHeight > window.innerHeight-12) y = e.clientY-tooltip.offsetHeight-10;
+  tooltip.style.left = x+'px'; tooltip.style.top = y+'px';
+}
+function hideTT() { tooltip.classList.remove('show'); }
+
+// ═══════════════════════════════════════════════════════════
+// LINKED HIGHLIGHTING (hover)
+// ═══════════════════════════════════════════════════════════
+function linkedHover(nodeId) {
+  if (highlighted.size) return; // don't interfere with click-highlight
+
+  // BFS downstream
+  const ds = new Set([nodeId]);
+  const q = [nodeId];
+  while (q.length) { const c = q.shift(); (adjDown[c]||[]).forEach(n => { if(!ds.has(n)){ds.add(n);q.push(n)} }) }
+
+  // BFS upstream
+  const us = new Set([nodeId]);
+  const uq = [nodeId];
+  while (uq.length) { const c = uq.shift(); (adjUp[c]||[]).forEach(n => { if(!us.has(n)){us.add(n);uq.push(n)} }) }
+
+  allNodes.forEach(n => {
+    n.classList.remove('hl-hover','hl-upstream','hl-downstream','dimmed');
+    if (n.id === nodeId) n.classList.add('hl-hover');
+    else if (us.has(n.id)) n.classList.add('hl-upstream');
+    else if (ds.has(n.id)) n.classList.add('hl-downstream');
+    else n.classList.add('dimmed');
+  });
+
+  allLines.forEach(l => {
+    l.classList.remove('hl-up','hl-down','dimmed');
+    const f = l.getAttribute('data-from'), t = l.getAttribute('data-to');
+    const isDS = ds.has(t) && (f===nodeId||ds.has(f));
+    const isUS = us.has(f) && (t===nodeId||us.has(t));
+    if (isDS) l.classList.add('hl-down');
+    else if (isUS) l.classList.add('hl-up');
+    else l.classList.add('dimmed');
+  });
+
+  allParticles.forEach(p => {
+    const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+    p.style.opacity = (ds.has(t)||us.has(f))?'1':'.04';
+  });
+}
+
+function linkedClear() {
+  if (highlighted.size) return;
+  allNodes.forEach(n => { n.classList.remove('hl-hover','hl-upstream','hl-downstream','dimmed'); });
+  allLines.forEach(l => { l.classList.remove('hl-up','hl-down','dimmed'); });
+  allParticles.forEach(p => { p.style.opacity = '.9'; });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLICK HIGHLIGHT (persistent)
+// ═══════════════════════════════════════════════════════════
+function clickHL(nid) {
+  clearHL();
+  highlighted.add(nid);
+
+  // Downstream BFS
+  const q = [nid];
+  while (q.length) { const c = q.shift(); (adjDown[c]||[]).forEach(n => { if(!highlighted.has(n)){highlighted.add(n);q.push(n)} }) }
+
+  // Upstream BFS
+  const uq = [nid];
+  while (uq.length) { const c = uq.shift(); (adjUp[c]||[]).forEach(n => { if(!highlighted.has(n)){highlighted.add(n);uq.push(n)} }) }
+
+  allNodes.forEach(n => n.classList.toggle('dimmed', !highlighted.has(n.id)));
+  allLines.forEach(l => {
+    const f = l.getAttribute('data-from'), t = l.getAttribute('data-to');
+    const on = highlighted.has(f) && highlighted.has(t);
+    l.classList.toggle('highlight', on);
+    l.classList.toggle('dimmed', !on);
+  });
+  allParticles.forEach(p => {
+    const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+    p.style.opacity = highlighted.has(f) && highlighted.has(t) ? '1' : '.04';
+  });
+}
+
+function clearHL() {
+  highlighted.clear();
+  allNodes.forEach(n => n.classList.remove('dimmed'));
+  allLines.forEach(l => { l.classList.remove('dimmed','highlight'); });
+  allParticles.forEach(p => { p.style.opacity = '.9'; });
+}
+
+// ═══════════════════════════════════════════════════════════
+// SMOOTH SCROLL TO COLUMN
+// ═══════════════════════════════════════════════════════════
+function scrollToCol(colId) {
+  const col = document.getElementById(colId);
+  if (!col) return;
+  const cr = scrollContainer.getBoundingClientRect();
+  const colRect = col.getBoundingClientRect();
+  const targetScroll = scrollContainer.scrollLeft + colRect.left - cr.left;
+  scrollContainer.scrollTo({ left: targetScroll, behavior: 'smooth' });
+}
+
+// ═══════════════════════════════════════════════════════════
+// NODE EVENT BINDING
+// ═══════════════════════════════════════════════════════════
+function bindNodeEvents() {
+  allNodes = [...document.querySelectorAll('.node')];
+  allNodes.forEach(n => {
+    n.addEventListener('mouseenter', e => { showTT(e, n); linkedHover(n.id); });
+    n.addEventListener('mousemove', e => {
+      if (tooltip.classList.contains('show')) {
+        let x = e.clientX+14, y = e.clientY+10;
+        if (x+tooltip.offsetWidth > window.innerWidth-12) x = e.clientX-tooltip.offsetWidth-14;
+        if (y+tooltip.offsetHeight > window.innerHeight-12) y = e.clientY-tooltip.offsetHeight-10;
+        tooltip.style.left = x+'px'; tooltip.style.top = y+'px';
+      }
+    });
+    n.addEventListener('mouseleave', () => { hideTT(); linkedClear(); });
+    n.addEventListener('click', e => {
+      e.stopPropagation();
+      if (highlighted.has(n.id)) { clearHL(); }
+      else { clickHL(n.id); }
+      // Smooth scroll to node's column
+      const col = n.closest('.snap-col');
+      if (col) scrollToCol(col.id);
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// INTERSECTION OBSERVER — scroll-triggered entrance
+// ═══════════════════════════════════════════════════════════
+function setupIntersectionObserver() {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('enter-active');
+        entry.target.classList.remove('enter-ready');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    root: scrollContainer,
+    rootMargin: '0px 50px 0px 0px',
+    threshold: 0.3
+  });
+
+  document.querySelectorAll('.node.enter-ready').forEach((n, i) => {
+    observer.observe(n);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// PARALLAX — background grid moves slower on scroll
+// ═══════════════════════════════════════════════════════════
+let rafId;
+function updateParallax() {
+  const sx = scrollContainer.scrollLeft;
+  bgGrid.style.transform = `translateX(${-sx * 0.3}px)`;
+  document.documentElement.style.setProperty('--scroll-x', sx);
+}
+
+scrollContainer.addEventListener('scroll', () => {
+  if (!rafId) rafId = requestAnimationFrame(() => {
+    updateParallax();
+    rafId = null;
+  });
+}, { passive: true });
+
+// ═══════════════════════════════════════════════════════════
+// ZOOM (Ctrl+Wheel or pinch)
+// ═══════════════════════════════════════════════════════════
+let zoomLevel = 1;
+scrollContainer.addEventListener('wheel', e => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.05 : 0.05;
+  zoomLevel = Math.max(0.4, Math.min(2, zoomLevel + delta));
+  archGrid.style.transform = `scale(${zoomLevel})`;
+  archGrid.style.transformOrigin = 'top left';
+  // Redraw connections after zoom
+  clearTimeout(window._zoomRedraw);
+  window._zoomRedraw = setTimeout(drawConnections, 150);
+}, { passive: false });
+
+// ═══════════════════════════════════════════════════════════
+// NAV ARROWS
+// ═══════════════════════════════════════════════════════════
+const colIds = ['col1','col2','col3','col4','col5','col6'];
+
+function updateNavState() {
+  const sl = scrollContainer.scrollLeft;
+  const maxSl = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+  navLeft.classList.toggle('disabled', sl < 10);
+  navRight.classList.toggle('disabled', sl > maxSl - 10);
+}
+
+navLeft.addEventListener('click', () => {
+  const currentIdx = colIds.findIndex(id => {
+    const c = document.getElementById(id);
+    return c.getBoundingClientRect().left >= 0;
+  });
+  const targetIdx = Math.max(0, (currentIdx === -1 ? 0 : currentIdx) - 1);
+  scrollToCol(colIds[targetIdx]);
+});
+
+navRight.addEventListener('click', () => {
+  const currentIdx = [...colIds].reverse().findIndex(id => {
+    const c = document.getElementById(id);
+    return c.getBoundingClientRect().right <= window.innerWidth;
+  });
+  const idx = currentIdx === -1 ? colIds.length-1 : colIds.length-1-currentIdx;
+  const targetIdx = Math.min(colIds.length-1, idx + 1);
+  scrollToCol(colIds[targetIdx]);
+});
+
+scrollContainer.addEventListener('scroll', updateNavState, { passive: true });
+
+// Keyboard nav
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); navLeft.click(); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); navRight.click(); }
+  if (e.key === 'Escape') { clearHL(); linkedClear(); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// VIEW CONTROLS
+// ═══════════════════════════════════════════════════════════
+const coreIds = new Set([
+  'api-chat','ws-stream','mod-auth','mod-router','mod-runChat',
+  'mod-collectContext','mod-buildSystemPrompt','mod-llm-ask','mod-emitSay',
+  'mod-persona','mod-scene','mod-history','mod-rag','mod-fishTts','mod-resolveAndPlay','mod-ncm',
+  'mod-radio','mod-scheduler','mod-state',
+  'ext-deepseek','ext-ollama','ext-fishtts','ext-siliconflow','ext-netease'
+]);
+
+document.querySelectorAll('.ctrl-btn').forEach(b => {
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    document.querySelectorAll('.ctrl-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const m = b.dataset.mode;
+
+    if (m === 'all') {
+      clearHL();
+      linkedClear();
+    } else if (m === 'core') {
+      clearHL();
+      linkedClear();
+      allNodes.forEach(n => { if (!coreIds.has(n.id)) n.classList.add('dimmed'); });
+      allLines.forEach(l => {
+        const f = l.getAttribute('data-from'), t = l.getAttribute('data-to');
+        const on = coreIds.has(f) && coreIds.has(t);
+        l.classList.toggle('highlight', on);
+        l.classList.toggle('dimmed', !on);
+      });
+      allParticles.forEach(p => {
+        const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+        p.style.opacity = coreIds.has(f) && coreIds.has(t) ? '1' : '.04';
+      });
+    } else if (m === 'reset') {
+      zoomLevel = 1;
+      archGrid.style.transform = 'scale(1)';
+      clearHL();
+      linkedClear();
+      scrollContainer.scrollTo({ left: 0, behavior: 'smooth' });
+      setTimeout(drawConnections, 400);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('load', () => {
+  bindNodeEvents();
+  drawConnections();
+  setupIntersectionObserver();
+  updateNavState();
+  updateParallax();
+  setTimeout(() => { scrollHint.style.opacity = '0'; }, 10000);
+  // Immediate entrance for nodes already in view
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.node.enter-ready').forEach(n => {
+      const r = n.getBoundingClientRect();
+      if (r.left < window.innerWidth && r.right > 0) {
+        n.classList.add('enter-active');
+        n.classList.remove('enter-ready');
+      }
+    });
+  });
+});
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    drawConnections();
+    updateNavState();
+  }, 300);
+});
+
+// Touch swipe detection for mobile
+let touchStartX = 0;
+scrollContainer.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, { passive: true });
+</script>
+</body>
+</html>

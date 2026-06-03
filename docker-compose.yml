@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  claudio:
+    build: .
+    container_name: claudio
+    ports:
+      - "${PORT:-8080}:8080"
+    env_file:
+      - .env
+    volumes:
+      # 持久化状态文件
+      - ./state:/app/state
+      # 持久化 TTS 缓存
+      - ./state/tts-cache:/app/state/tts-cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
