@@ -1,0 +1,12 @@
+node_modules
+state
+data
+.env
+.env.*
+!.env.example
+!.env.production.example
+.git
+.gitignore
+*.log
+docs
+test

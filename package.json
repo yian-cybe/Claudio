@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
+    "check:production": "node --env-file-if-exists=.env.production scripts/check-production-config.js",
+    "check:launch": "node --env-file-if-exists=.env.production scripts/check-launch-readiness.js",
     "prune-state": "node scripts/prune-state.js",
     "import-ncm": "node scripts/import-ncm.js",
     "test": "node --test test/*.test.js",
@@ -16,11 +18,16 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "NeteaseCloudMusicApi": "^4.32.0",
+    "NeteaseCloudMusicApi": "4.32.0",
     "node-cron": "^4.2.1",
+    "nodemailer": "9.0.1",
     "openai": "^6.38.0",
-    "ws": "^8.18.0"
+    "qrcode": "1.5.4",
+    "ws": "8.21.0"
   },
   "author": "cuiyao",
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "music-metadata": "11.13.0"
+  }
 }

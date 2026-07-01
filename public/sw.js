@@ -1,5 +1,5 @@
-const CACHE = 'claudio-shell-v4';
-const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/manifest.webmanifest'];
+const CACHE = 'claudio-shell-v17';
+const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/pixel-dino.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/stream')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) return;
   if (e.request.method !== 'GET') return;
   e.respondWith(
     caches.match(e.request).then((cached) => cached || fetch(e.request))

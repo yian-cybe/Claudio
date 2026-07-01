@@ -1,0 +1,55 @@
+services:
+  claudio:
+    build:
+      context: .
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      LLM_PROVIDER: openai
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-chat}
+      LLM_MAX_ATTEMPTS: ${LLM_MAX_ATTEMPTS:-3}
+      API_TOKEN: ${API_TOKEN:-}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL is required}
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-false}
+      EMAIL_VERIFICATION_HOURS: ${EMAIL_VERIFICATION_HOURS:-24}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      FREE_DAILY_MESSAGES: ${FREE_DAILY_MESSAGES:-10}
+      PRO_DAILY_MESSAGES: ${PRO_DAILY_MESSAGES:-200}
+      LLM_INPUT_USD_PER_MILLION: ${LLM_INPUT_USD_PER_MILLION:-}
+      LLM_OUTPUT_USD_PER_MILLION: ${LLM_OUTPUT_USD_PER_MILLION:-}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      AUTH_RATE_WINDOW_MS: ${AUTH_RATE_WINDOW_MS:-900000}
+      REGISTER_IP_LIMIT: ${REGISTER_IP_LIMIT:-5}
+      LOGIN_IP_LIMIT: ${LOGIN_IP_LIMIT:-20}
+      LOGIN_ACCOUNT_LIMIT: ${LOGIN_ACCOUNT_LIMIT:-10}
+      CHAT_RATE_WINDOW_MS: ${CHAT_RATE_WINDOW_MS:-60000}
+      CHAT_ACCOUNT_LIMIT: ${CHAT_ACCOUNT_LIMIT:-30}
+      CHAT_IP_LIMIT: ${CHAT_IP_LIMIT:-60}
+      BILLING_WEBHOOK_SECRET: ${BILLING_WEBHOOK_SECRET:-}
+      MONITORING_DSN: ${MONITORING_DSN:-}
+      ALLOW_RUNTIME_SETTINGS: "false"
+      OLLAMA_FALLBACK: "false"
+      RAG_ENABLED: "false"
+      RSS_ENABLED: "false"
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      - claudio_state:/app/state
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  claudio_state:
